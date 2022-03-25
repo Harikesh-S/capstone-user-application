@@ -303,7 +303,7 @@ class _NodePageState extends State<NodePage> {
                               value: _structure["options"]
                                   [option], //_structure["options"][option],
                               onChanged: (newValue) {
-                                setState(() {
+                                setState(() async {
                                   // TODO replace with request
                                   var message = [
                                     "set-option",
@@ -311,8 +311,18 @@ class _NodePageState extends State<NodePage> {
                                     newValue
                                   ];
                                   debugPrint(jsonEncode(message));
-                                  //_structure["options"][option] = newValue;
-                                  //print(_structure);
+
+                                  final nonce = AesGcm.with128bits().newNonce();
+                                  final secretKey = SecretKey(widget.aesKey);
+                                  final secretBox =
+                                      await AesGcm.with128bits().encrypt(
+                                    utf8.encode(jsonEncode(message)),
+                                    secretKey: secretKey,
+                                    nonce: nonce,
+                                  );
+                                  widget.socket.add(nonce +
+                                      secretBox.cipherText +
+                                      secretBox.mac.bytes);
                                 });
                               }),
                         ),
