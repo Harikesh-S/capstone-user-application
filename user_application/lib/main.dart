@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:user_application/home.dart';
+import 'package:user_application/camera.dart';
 import 'package:sizer/sizer.dart';
 
 void main() {
