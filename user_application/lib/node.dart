@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'dart:io';
@@ -28,38 +30,47 @@ class _NodePageState extends State<NodePage> {
   bool _waitingForStructure = true;
   dynamic _structure;
 
+  // Buffers used when receiving larger messages from camera nodes
+  List<int> _messageBuffer = [];
+  List<int> _message = [];
+  int _messageLength = -1;
+
   @override
   void initState() {
     super.initState();
 
     widget.socket.listen(
       (List<int> event) async {
-        SecretKey secretKey = SecretKey(widget.aesKey);
+        if (_waitingForStructure) {
+          try {
+            SecretKey secretKey = SecretKey(widget.aesKey);
 
-        List<int> iv = event.sublist(0, 12);
-        List<int> cipherText = event.sublist(12, event.length - 16);
-        List<int> tag = event.sublist(event.length - 16);
-        SecretBox secretBox = SecretBox(cipherText, nonce: iv, mac: Mac(tag));
-        try {
-          List<int> decrypted = await AesGcm.with128bits()
-              .decrypt(secretBox, secretKey: secretKey);
-          String decoded = utf8.decode(decrypted);
-          if (_waitingForStructure) {
+            List<int> iv = event.sublist(0, 12);
+            List<int> cipherText = event.sublist(12, event.length - 16);
+            List<int> tag = event.sublist(event.length - 16);
+            SecretBox secretBox =
+                SecretBox(cipherText, nonce: iv, mac: Mac(tag));
+
+            List<int> decrypted = await AesGcm.with128bits()
+                .decrypt(secretBox, secretKey: secretKey);
+            String decoded = utf8.decode(decrypted);
             setState(() {
               _waitingForStructure = false;
               try {
                 _structure = jsonDecode(decoded);
+                if (_structure["type"] == "camera") {
+                  _structure["imgAvail"] = false;
+                }
               } on FormatException catch (e) {
                 debugPrint("$e");
                 _structure = null;
               }
             });
-          } else {
-            debugPrint(decoded);
-            processMessage(decoded);
+          } on SecretBoxAuthenticationError {
+            debugPrint("Authentication Error");
           }
-        } on SecretBoxAuthenticationError {
-          debugPrint("Authentication Error");
+        } else {
+          processMessage(event);
         }
       },
     );
@@ -105,6 +116,15 @@ class _NodePageState extends State<NodePage> {
                         ),
                       ],
                     ),
+                  ),
+                ] else if (_structure["type"] == "camera") ...[
+                  Container(
+                    child: (_structure["imgAvail"] == true)
+                        ? Image.memory(
+                            _structure["img"],
+                            gaplessPlayback: true,
+                          )
+                        : const CircularProgressIndicator(),
                   ),
                 ] else ...[
                   Text("Invalid node type!", style: _error)
@@ -335,41 +355,91 @@ class _NodePageState extends State<NodePage> {
     );
   }
 
-  void processMessage(messageString) {
-    dynamic message;
-    try {
-      message = jsonDecode(messageString);
-    } on Exception catch (e) {
-      debugPrint("$e");
-    }
-    if (message != null) {
-      debugPrint("$message");
-      if (message[0] == "options") {
-        setState(() {
-          for (var option in message[1].keys) {
-            try {
-              _structure["options"][option] = message[1][option];
-            } on NoSuchMethodError catch (e) {
-              debugPrint("$e");
-            }
-          }
-        });
-      } else {
-        var node = _structure["nodes"][message[0]];
-        if (node == null) {
-          debugPrint("Invalid message - Node not found");
-        } else if (node[message[1]] == null) {
-          debugPrint("Invalid message - Field not found");
-        } else {
+  void processMessage(messageData) async {
+    if (_structure["type"] == "gateway") {
+      SecretKey secretKey = SecretKey(widget.aesKey);
+      List<int> iv = messageData.sublist(0, 12);
+      List<int> cipherText = messageData.sublist(12, messageData.length - 16);
+      List<int> tag = messageData.sublist(messageData.length - 16);
+      SecretBox secretBox = SecretBox(cipherText, nonce: iv, mac: Mac(tag));
+
+      dynamic message;
+      try {
+        List<int> decrypted =
+            await AesGcm.with128bits().decrypt(secretBox, secretKey: secretKey);
+        String decoded = utf8.decode(decrypted);
+
+        message = jsonDecode(decoded);
+      } on Exception catch (e) {
+        debugPrint("$e");
+      }
+      if (message != null) {
+        debugPrint("$message");
+        if (message[0] == "options") {
           setState(() {
-            try {
-              for (var i = 0; i < node[message[1]].length; i++) {
-                node[message[1]][i] = message[2][i];
+            for (var option in message[1].keys) {
+              try {
+                _structure["options"][option] = message[1][option];
+              } on NoSuchMethodError catch (e) {
+                debugPrint("$e");
               }
-            } on RangeError catch (e) {
-              debugPrint("$e");
             }
           });
+        } else {
+          var node = _structure["nodes"][message[0]];
+          if (node == null) {
+            debugPrint("Invalid message - Node not found");
+          } else if (node[message[1]] == null) {
+            debugPrint("Invalid message - Field not found");
+          } else {
+            setState(() {
+              try {
+                for (var i = 0; i < node[message[1]].length; i++) {
+                  node[message[1]][i] = message[2][i];
+                }
+              } on RangeError catch (e) {
+                debugPrint("$e");
+              }
+            });
+          }
+        }
+      }
+    } else if (_structure["type"] == "camera") {
+      _messageBuffer += messageData;
+      // Get message length if it is not set and is available in the buffer
+      if (_messageLength == -1) {
+        for (int i = 0; i < _messageBuffer.length; i++) {
+          // ASCII value of | is 124
+          if (_messageBuffer[i] == 124) {
+            _messageLength =
+                int.parse(utf8.decode(_messageBuffer.sublist(0, i)));
+            _messageBuffer.removeRange(0, i + 1);
+            break;
+          }
+        }
+      }
+
+      // Get message if entire message is available
+      if (_messageLength != -1) {
+        if (_messageLength <= _messageBuffer.length) {
+          _message = _messageBuffer.sublist(0, _messageLength);
+          _messageBuffer.removeRange(0, _messageLength);
+          _messageLength = -1;
+          SecretKey secretKey = SecretKey(widget.aesKey);
+
+          List<int> iv = _message.sublist(0, 12);
+          List<int> cipherText = _message.sublist(12, _message.length - 16);
+          List<int> tag = _message.sublist(_message.length - 16);
+          SecretBox secretBox = SecretBox(cipherText, nonce: iv, mac: Mac(tag));
+          try {
+            List<int> decrypted = await AesGcm.with128bits()
+                .decrypt(secretBox, secretKey: secretKey);
+            _structure["img"] = Uint8List.fromList(decrypted);
+            _structure["imgAvail"] = true;
+            setState(() {});
+          } on SecretBoxAuthenticationError {
+            debugPrint("Authentication Error");
+          }
         }
       }
     }

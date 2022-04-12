@@ -233,7 +233,7 @@ class _HomePageState extends State<HomePage> {
       }
       //content = "Key : ${String.fromCharCodes(key)}";\
       debugPrint("Connecting to IP : $ip Key : $key");
-      Socket socket = await Socket.connect('192.168.1.7', 50001);
+      Socket socket = await Socket.connect(ip, 50001);
 
       Navigator.push(
         context,
