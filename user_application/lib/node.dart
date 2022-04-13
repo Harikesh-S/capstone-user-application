@@ -118,14 +118,18 @@ class _NodePageState extends State<NodePage> {
                     ),
                   ),
                 ] else if (_structure["type"] == "camera") ...[
-                  Container(
-                    child: (_structure["imgAvail"] == true)
-                        ? Image.memory(
+                  (_structure["imgAvail"] == true)
+                      ? Column(children: [
+                          Image.memory(
                             _structure["img"],
                             gaplessPlayback: true,
                           )
-                        : const CircularProgressIndicator(),
+                        ])
+                      : Column(children: const [CircularProgressIndicator()]),
+                  SizedBox(
+                    height: 4.sp,
                   ),
+                  generateCameraNodeInputs(context),
                 ] else ...[
                   Text("Invalid node type!", style: _error)
                 ]
@@ -135,6 +139,104 @@ class _NodePageState extends State<NodePage> {
         ),
       ),
     );
+  }
+
+  Column generateCameraNodeInputs(BuildContext context) {
+    var inputTags = _structure["input-tags"];
+    var inputValues = _structure["input-values"];
+
+    if (inputTags.length == 0) {
+      return Column();
+    }
+
+    return Column(children: [
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text("Input",
+              style: TextStyle(color: Theme.of(context).colorScheme.primary)),
+          SizedBox(
+            width: 10.sp,
+          ),
+        ],
+      ),
+      for (var i = 0; i < inputTags.length; i++)
+        Column(children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text(inputTags[i]),
+            Row(children: [
+              Text(inputValues[i]),
+              SizedBox(width: 10.sp),
+              ElevatedButton(
+                  onPressed: () {
+                    _setValueTextFieldController.clear();
+                    showDialog(
+                      context: context,
+                      builder: (BuildContext context) {
+                        return AlertDialog(
+                          title: Text(
+                            "Set Value for ${inputTags[i]}",
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          content: TextField(
+                            controller: _setValueTextFieldController,
+                          ),
+                          actions: <Widget>[
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                              },
+                              child: Text("Cancel",
+                                  style:
+                                      Theme.of(context).textTheme.bodyMedium),
+                            ),
+                            ElevatedButton(
+                              onPressed: () async {
+                                var value = _setValueTextFieldController.text;
+                                debugPrint(
+                                    "Set value field : ${inputTags[i]}, index : $i, value : $value");
+                                var message = [i, value];
+                                debugPrint(message.join('|'));
+
+                                final nonce = AesGcm.with128bits().newNonce();
+                                final secretKey = SecretKey(widget.aesKey);
+                                final secretBox =
+                                    await AesGcm.with128bits().encrypt(
+                                  utf8.encode(message.join('|')),
+                                  secretKey: secretKey,
+                                  nonce: nonce,
+                                );
+                                widget.socket.add(nonce +
+                                    secretBox.cipherText +
+                                    secretBox.mac.bytes);
+
+                                Navigator.pop(context);
+                              },
+                              child: Text("Set",
+                                  style:
+                                      Theme.of(context).textTheme.bodyMedium),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                    return;
+                  },
+                  style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.all(2.sp), minimumSize: Size.zero),
+                  child: Text(
+                    "Set Value",
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  )),
+            ]),
+          ]),
+          if (i + 1 < inputTags.length)
+            Divider(
+              height: 3.sp,
+              thickness: 1.sp,
+            ),
+        ]),
+    ]);
   }
 
   Container generateNode(BuildContext context, node) {
@@ -434,9 +536,22 @@ class _NodePageState extends State<NodePage> {
           try {
             List<int> decrypted = await AesGcm.with128bits()
                 .decrypt(secretBox, secretKey: secretKey);
-            _structure["img"] = Uint8List.fromList(decrypted);
-            _structure["imgAvail"] = true;
-            setState(() {});
+            // Image data is always larger than 1000 bytes,
+            // if the message is smaller it has to be input-values
+            if (decrypted.length > 1000) {
+              _structure["img"] = Uint8List.fromList(decrypted);
+              _structure["imgAvail"] = true;
+              setState(() {});
+            } else {
+              debugPrint("$decrypted");
+              // Set input-values
+              List<String> values = String.fromCharCodes(decrypted).split('|');
+              debugPrint("$values");
+              for (int i = 0; i < values.length; i++) {
+                _structure["input-values"][i] = values[i];
+              }
+              setState(() {});
+            }
           } on SecretBoxAuthenticationError {
             debugPrint("Authentication Error");
           }
