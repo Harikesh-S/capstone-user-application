@@ -195,7 +195,7 @@ class _NodePageState extends State<NodePage> {
                                 var value = _setValueTextFieldController.text;
                                 debugPrint(
                                     "Set value field : ${inputTags[i]}, index : $i, value : $value");
-                                var message = [i, value];
+                                var message = ["set", i, value];
                                 debugPrint(message.join('|'));
 
                                 final nonce = AesGcm.with128bits().newNonce();
