@@ -118,18 +118,19 @@ class _NodePageState extends State<NodePage> {
                     ),
                   ),
                 ] else if (_structure["type"] == "camera") ...[
+                  // SizedBox(
+                  //   height: 70.sp,
+                  // ),
                   (_structure["imgAvail"] == true)
-                      ? Column(children: [
-                          Image.memory(
+                      ? Transform.rotate(
+                          angle: 1.57,
+                          transformHitTests: false,
+                          child: Image.memory(
                             _structure["img"],
                             gaplessPlayback: true,
-                          )
-                        ])
+                          ),
+                        )
                       : Column(children: const [CircularProgressIndicator()]),
-                  SizedBox(
-                    height: 4.sp,
-                  ),
-                  generateCameraNodeInputs(context),
                 ] else ...[
                   Text("Invalid node type!", style: _error)
                 ]
@@ -138,6 +139,38 @@ class _NodePageState extends State<NodePage> {
           ),
         ),
       ),
+      floatingActionButton: (_structure == null)
+          ? null
+          : (_structure["type"] == "camera")
+              ? FloatingActionButton(
+                  child: const Icon(Icons.send),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (BuildContext context) {
+                        return AlertDialog(
+                          title: Text(
+                            "Set Value",
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          content: generateCameraNodeInputs(context),
+                          actions: <Widget>[
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                              },
+                              child: Text("Back",
+                                  style:
+                                      Theme.of(context).textTheme.bodyMedium),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                    return;
+                  },
+                )
+              : null,
     );
   }
 
@@ -149,7 +182,7 @@ class _NodePageState extends State<NodePage> {
       return Column();
     }
 
-    return Column(children: [
+    return Column(mainAxisSize: MainAxisSize.min, children: [
       Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -161,81 +194,81 @@ class _NodePageState extends State<NodePage> {
         ],
       ),
       for (var i = 0; i < inputTags.length; i++)
-        Column(children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text(inputTags[i]),
-            Row(children: [
-              Text(inputValues[i]),
-              SizedBox(width: 10.sp),
-              ElevatedButton(
-                  onPressed: () {
-                    _setValueTextFieldController.clear();
-                    showDialog(
-                      context: context,
-                      builder: (BuildContext context) {
-                        return AlertDialog(
-                          title: Text(
-                            "Set Value for ${inputTags[i]}",
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                          content: TextField(
-                            controller: _setValueTextFieldController,
-                          ),
-                          actions: <Widget>[
-                            ElevatedButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                              },
-                              child: Text("Cancel",
-                                  style:
-                                      Theme.of(context).textTheme.bodyMedium),
-                            ),
-                            ElevatedButton(
-                              onPressed: () async {
-                                var value = _setValueTextFieldController.text;
-                                debugPrint(
-                                    "Set value field : ${inputTags[i]}, index : $i, value : $value");
-                                var message = ["set", i, value];
-                                debugPrint(message.join('|'));
+        //Column(children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text(inputTags[i]),
+          SizedBox(width: 40.sp),
+          //Row(children: [
+          Text(inputValues[i]),
+          SizedBox(
+            width: 10.sp,
+            height: 20.sp,
+          ),
+          ElevatedButton(
+              onPressed: () {
+                _setValueTextFieldController.clear();
+                showDialog(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return AlertDialog(
+                      title: Text(
+                        "Set Value for ${inputTags[i]}",
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      content: TextField(
+                        controller: _setValueTextFieldController,
+                      ),
+                      actions: <Widget>[
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                          },
+                          child: Text("Cancel",
+                              style: Theme.of(context).textTheme.bodyMedium),
+                        ),
+                        ElevatedButton(
+                          onPressed: () async {
+                            var value = _setValueTextFieldController.text;
+                            debugPrint(
+                                "Set value field : ${inputTags[i]}, index : $i, value : $value");
+                            var message = ["set", i, value];
+                            debugPrint(message.join('|'));
 
-                                final nonce = AesGcm.with128bits().newNonce();
-                                final secretKey = SecretKey(widget.aesKey);
-                                final secretBox =
-                                    await AesGcm.with128bits().encrypt(
-                                  utf8.encode(message.join('|')),
-                                  secretKey: secretKey,
-                                  nonce: nonce,
-                                );
-                                widget.socket.add(nonce +
-                                    secretBox.cipherText +
-                                    secretBox.mac.bytes);
+                            final nonce = AesGcm.with128bits().newNonce();
+                            final secretKey = SecretKey(widget.aesKey);
+                            final secretBox =
+                                await AesGcm.with128bits().encrypt(
+                              utf8.encode(message.join('|')),
+                              secretKey: secretKey,
+                              nonce: nonce,
+                            );
+                            widget.socket.add(nonce +
+                                secretBox.cipherText +
+                                secretBox.mac.bytes);
 
-                                Navigator.pop(context);
-                              },
-                              child: Text("Set",
-                                  style:
-                                      Theme.of(context).textTheme.bodyMedium),
-                            ),
-                          ],
-                        );
-                      },
+                            Navigator.pop(context);
+                          },
+                          child: Text("Set",
+                              style: Theme.of(context).textTheme.bodyMedium),
+                        ),
+                      ],
                     );
-                    return;
                   },
-                  style: ElevatedButton.styleFrom(
-                      padding: EdgeInsets.all(2.sp), minimumSize: Size.zero),
-                  child: Text(
-                    "Set Value",
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  )),
-            ]),
-          ]),
-          if (i + 1 < inputTags.length)
-            Divider(
-              height: 3.sp,
-              thickness: 1.sp,
-            ),
+                );
+                return;
+              },
+              style: ElevatedButton.styleFrom(
+                  padding: EdgeInsets.all(2.sp), minimumSize: Size.zero),
+              child: Text(
+                "Set Value",
+                style: Theme.of(context).textTheme.bodyMedium,
+              )),
+          //]),
         ]),
+      Divider(
+        height: 3.sp,
+        thickness: 1.sp,
+      ),
     ]);
   }
 
